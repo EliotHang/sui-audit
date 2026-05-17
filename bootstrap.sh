@@ -73,7 +73,7 @@ main() {
     done
 
     log_info "执行安装器"
-    as_root bash "$INSTALL_DIR/install.sh"
+    bash "$INSTALL_DIR/install.sh"
 }
 
 main "$@"
