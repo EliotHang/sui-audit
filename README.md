@@ -5,6 +5,7 @@ Daily s-ui / sing-box log audit with local-time slicing, Telegram summaries, arc
 ## One-Line Install
 
 ```bash
+cd /path/to/your/s-ui-runtime
 bash <(curl -Ls https://raw.githubusercontent.com/EliotHang/sui-audit/main/bootstrap.sh)
 ```
 
@@ -20,6 +21,7 @@ SUI_AUDIT_DIR="/opt/sui-audit" bash <(curl -Ls https://raw.githubusercontent.com
 - `install.sh`: interactive installer for log path, Telegram config, and systemd timers
 - `run.sh`: task runner; refreshes `analysis.sh` before each audit task
 - `update.sh`: curl-based updater for support scripts
+- `uninstall.sh`: removes systemd timers/services and optionally purges local audit files
 - `test_telegram.sh`: simple Telegram test sender
 - `telegram.conf.example`: config template
 
@@ -42,7 +44,7 @@ Runtime files are intentionally ignored:
 
 The source log still uses `+0000`. `analysis.sh` converts the local-day window to UTC before slicing the log.
 
-During installation, enter the real s-ui log path when prompted. If the log is in another location, use an absolute path or create a symlink in the install directory.
+By default, `bootstrap.sh` installs into the directory where you run the command. Run it from your s-ui runtime directory if `s-ui.log` is there. During installation, enter the real s-ui log path when prompted; the default is `s-ui.log` relative to that directory.
 
 ## Manual Commands
 
@@ -53,6 +55,8 @@ During installation, enter the real s-ui log path when prompted. If the log is i
 ./run.sh --cleanup-dry-run
 ./test_telegram.sh
 ./update.sh
+./uninstall.sh
+./uninstall.sh --purge
 ```
 
 ## Update
@@ -65,6 +69,22 @@ To refresh support scripts manually, run:
 ./update.sh
 ```
 
-It downloads `install.sh`, `run.sh`, `test_telegram.sh`, `telegram.conf.example`, `bootstrap.sh`, and `VERSION` from the raw GitHub URL, preserves local `telegram.conf` and `.install.conf`, and reinstalls systemd timers when support scripts changed.
+It downloads `install.sh`, `run.sh`, `test_telegram.sh`, `uninstall.sh`, `telegram.conf.example`, `bootstrap.sh`, and `VERSION` from the raw GitHub URL, preserves local `telegram.conf` and `.install.conf`, and reinstalls systemd timers when support scripts changed.
 
 The installer also creates `sui-audit-update.timer`, which runs before the daily audit and refreshes support scripts automatically.
+
+## Uninstall
+
+Remove timers/services only:
+
+```bash
+./uninstall.sh
+```
+
+Remove timers/services plus local audit scripts, configs, archives, state, warnings, and generated reports:
+
+```bash
+./uninstall.sh --purge
+```
+
+`s-ui.log` is never deleted by the uninstaller.

@@ -208,7 +208,7 @@ main() {
 
     [[ -f "$analysis_script" ]] || die "缺少 analysis.sh: $analysis_script"
     [[ -f "$runner_script" ]] || die "缺少 run.sh: $runner_script"
-    chmod +x "$analysis_script" "$runner_script" "$script_dir/test_telegram.sh" "$script_dir/update.sh" "$script_dir/bootstrap.sh" 2>/dev/null || true
+    chmod +x "$analysis_script" "$runner_script" "$script_dir/test_telegram.sh" "$script_dir/update.sh" "$script_dir/bootstrap.sh" "$script_dir/uninstall.sh" 2>/dev/null || true
 
     write_install_conf "$install_conf"
     write_telegram_conf "$telegram_conf"
@@ -362,6 +362,12 @@ EOF_TIMER
 
   检查/刷新支撑脚本:
     cd $script_dir && ./update.sh
+
+  卸载 systemd timer/service:
+    cd $script_dir && ./uninstall.sh
+
+  完整卸载本工具文件和归档:
+    cd $script_dir && ./uninstall.sh --purge
 
 EOF_DONE
 }

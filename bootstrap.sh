@@ -5,13 +5,14 @@ IFS=$'\n\t'
 
 DEFAULT_BASE_URL="https://raw.githubusercontent.com/EliotHang/sui-audit/main"
 BASE_URL="${SUI_AUDIT_BASE_URL:-$DEFAULT_BASE_URL}"
-INSTALL_DIR="${SUI_AUDIT_DIR:-/opt/sui-audit}"
+INSTALL_DIR="${SUI_AUDIT_DIR:-$PWD}"
 
 FILES=(
     "analysis.sh"
     "install.sh"
     "run.sh"
     "update.sh"
+    "uninstall.sh"
     "test_telegram.sh"
     "telegram.conf.example"
     "VERSION"
@@ -34,14 +35,6 @@ require_cmd() {
     command -v "$1" >/dev/null 2>&1 || die "缺少依赖命令: $1"
 }
 
-as_root() {
-    if (( EUID == 0 )); then
-        "$@"
-    else
-        sudo "$@"
-    fi
-}
-
 download_file() {
     local name="$1"
     local url="$BASE_URL/$name"
@@ -49,32 +42,30 @@ download_file() {
     local tmp="$target.tmp.$$"
 
     log_info "下载 $name"
-    as_root curl -fsSL "$url" -o "$tmp"
+    curl -fsSL "$url" -o "$tmp"
 
     case "$name" in
         *.sh)
-            as_root bash -n "$tmp"
-            as_root chmod 0755 "$tmp"
+            bash -n "$tmp"
+            chmod 0755 "$tmp"
             ;;
         *)
-            as_root chmod 0644 "$tmp"
+            chmod 0644 "$tmp"
             ;;
     esac
 
-    as_root mv "$tmp" "$target"
+    mv "$tmp" "$target"
 }
 
 main() {
     require_cmd bash
     require_cmd curl
-    if (( EUID != 0 )); then
-        require_cmd sudo
-    fi
 
     log_info "远程地址: $BASE_URL"
     log_info "安装目录: $INSTALL_DIR"
 
-    as_root mkdir -p "$INSTALL_DIR"
+    mkdir -p "$INSTALL_DIR"
+    [[ -w "$INSTALL_DIR" ]] || die "安装目录不可写，请切换到可写目录，或设置 SUI_AUDIT_DIR"
 
     local file
     for file in "${FILES[@]}"; do

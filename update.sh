@@ -11,6 +11,7 @@ SUPPORT_FILES=(
     "install.sh"
     "run.sh"
     "test_telegram.sh"
+    "uninstall.sh"
     "telegram.conf.example"
     "bootstrap.sh"
     "VERSION"
