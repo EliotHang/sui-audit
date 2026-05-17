@@ -1,0 +1,14 @@
+.DS_Store
+telegram.conf
+.install.conf
+users.list
+s-ui.log
+archives/
+state/
+warnings/
+systemd/
+*.tmp
+*.log
+*.log.gz
+sui-audit-*.md
+sui-滥用检测详细报告-*.md

@@ -1,0 +1,29 @@
+# Copy this file to telegram.conf and fill in the real values.
+# Keep telegram.conf private. Do not commit or share your bot token.
+
+TELEGRAM_ENABLED=1
+TELEGRAM_BOT_TOKEN="123456789:replace_with_your_bot_token"
+TELEGRAM_CHAT_ID="-1001234567890"
+
+# Optional: shown in Telegram messages. If empty, hostname -f is used.
+TELEGRAM_NODE_NAME="vps-hk-01"
+
+# Optional: send summaries for manual non-window runs too.
+# Default behavior is to notify only --daily / --date / --since+--until runs.
+TELEGRAM_SEND_MANUAL=0
+
+# Optional: 1 sends Telegram messages silently.
+TELEGRAM_SILENT=0
+
+# Optional: leave empty for plain text. Supported values include MarkdownV2 and HTML.
+TELEGRAM_PARSE_MODE=""
+
+# Optional: custom API base, useful for compatible gateways or proxies.
+TELEGRAM_API_BASE="https://api.telegram.org"
+
+# Optional: curl timeout in seconds.
+TELEGRAM_TIMEOUT=15
+
+# Optional: monthly cleanup restarts this service after deleting old archives.
+RESTART_SERVICE_AFTER_CLEANUP=1
+SUI_SERVICE_NAME="s-ui"
