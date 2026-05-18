@@ -13,7 +13,7 @@ if (( BASH_VERSINFO[0] < 4 )); then
     exit 2
 fi
 
-SCRIPT_VERSION="4.1"
+SCRIPT_VERSION="4.1.1"
 
 LOG_FILE="s-ui.log"
 OUTPUT_PREFIX="sui-滥用检测详细报告-v${SCRIPT_VERSION}"
@@ -90,7 +90,8 @@ TOP_TARGET_CONCENTRATION_THRESHOLD=60
 BURST_5MIN_THRESHOLD=300
 CONN_PER_HOUR_THRESHOLD=500
 
-BT_PATTERNS="tracker|torrent|hdsky|chdbits|ourbits|m-team|pterclub|announce"
+BT_PATTERNS="tracker|torrent|bittorrent|hdsky|chdbits|ourbits|m-team|pterclub|announce"
+BT_LABEL_PATTERNS="${BT_PATTERNS}|(^|[.-])(pt|bt)([.-]|$)"
 COMMERCIAL_PATTERNS="adspower|multilogin|gologin|kameleo|incogniton|selenium|puppeteer"
 
 declare -A USER_RISK_LEVEL
@@ -1387,7 +1388,7 @@ detect_user_risk() {
 target_analysis_label() {
     local target="$1"
 
-    if grep -qiE "(tracker|torrent|pt|bt)" <<< "$target"; then
+    if grep -qiE "$BT_LABEL_PATTERNS" <<< "$target"; then
         printf '🚨 BT/PT'
     elif grep -qiE "(adspower|multilogin)" <<< "$target"; then
         printf '⚠️ 商业工具'
@@ -1830,4 +1831,3 @@ main() {
 }
 
 main "$@"
-
