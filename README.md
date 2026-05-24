@@ -42,8 +42,6 @@ Runtime files are intentionally ignored:
 - Weekly Telegram summary: Monday `02:20`
 - Monthly cleanup: day 1 `02:30`
 
-The source log still uses `+0000`. `analysis.sh` converts the local-day window to UTC before slicing the log.
-
 By default, `bootstrap.sh` installs into the directory where you run the command. Run it from your s-ui runtime directory if `s-ui.log` is there. During installation, enter the real s-ui log path when prompted; the default is `s-ui.log` relative to that directory.
 
 ## Manual Commands

@@ -18,7 +18,7 @@ SCRIPT_VERSION="4.1.1"
 LOG_FILE="s-ui.log"
 OUTPUT_PREFIX="sui-滥用检测详细报告-v${SCRIPT_VERSION}"
 TOP_N=10
-IP_SAMPLE_SIZE=200
+IP_SAMPLE_SIZE=400
 KEEP_TEMP=0
 USER_FILTER_FILE=""
 DAILY_MODE=0
@@ -163,9 +163,9 @@ s-ui 日志滥用检测脚本 v${SCRIPT_VERSION}
   PREFIX-YYYY-MM-DD.md     人工阅读报告
 
 自动化归档:
-  archives/logs/YYYY/MM/s-ui-YYYY-MM-DD.log.gz
-  archives/reports/YYYY/MM/sui-audit-YYYY-MM-DD.md
-  archives/warnings/YYYY/MM/YYYY-MM-DD/
+  archives/logs/YYYYMM/s-ui-YYYY-MM-DD.log.gz
+  archives/reports/YYYYMM/sui-audit-YYYY-MM-DD.md
+  archives/warnings/YYYYMM/YYYY-MM-DD/
 
 Telegram:
   如果脚本目录存在 telegram.conf 且 TELEGRAM_ENABLED=1，自动化分析成功后会发送审计摘要
@@ -400,7 +400,7 @@ format_log_time_local() {
     local raw="${1:-}"
 
     if [[ "$raw" =~ ^[+-][0-9]{4}[[:space:]][0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]][0-9]{2}:[0-9]{2}:[0-9]{2}$ ]]; then
-        # 日志本身已经带 +0800，报告中直接显示日志时间，不再转换到系统时区。
+        # 报告中直接显示日志自带时间，不做时区转换。
         printf '%s %s' "${raw:6:10}" "${raw:17:8} ${raw:0:5}"
         return 0
     fi
@@ -621,7 +621,7 @@ build_weekly_summary_message() {
     today="$(TZ="$LOG_DATE_TZ" date '+%Y-%m-%d')"
     for i in 1 2 3 4 5 6 7; do
         date_key="$(TZ="$LOG_DATE_TZ" date -d "$today - $i day" '+%Y-%m-%d')"
-        report_file="$ARCHIVE_ROOT/reports/${date_key:0:4}/${date_key:5:2}/sui-audit-$date_key.md"
+        report_file="$ARCHIVE_ROOT/reports/${date_key:0:4}${date_key:5:2}/sui-audit-$date_key.md"
         if [[ -f "$report_file" ]]; then
             high="$(grep -m1 '高风险用户' "$report_file" | grep -oP '[0-9]+' | head -n 1 || printf '0')"
             medium="$(grep -m1 '中风险用户' "$report_file" | grep -oP '[0-9]+' | head -n 1 || printf '0')"
@@ -701,7 +701,7 @@ parse_date_window() {
     DATE_SUFFIX="$TARGET_DATE"
     ANALYSIS_LOCAL_START_KEY="$start_text"
     ANALYSIS_LOCAL_END_KEY="$end_text"
-    # 日志已经是 +0800 本地日志时间；切片时直接用日志里的 $2 $3 比较，不再转 UTC。
+    # 直接按日志里的本地时间字段切片，不做时区转换。
     ANALYSIS_START_KEY="$start_text"
     ANALYSIS_END_KEY="$end_text"
     ANALYSIS_WINDOW_LABEL="$start_text ~ $end_text 日志时间"
@@ -750,11 +750,10 @@ archive_gzip_atomic() {
 }
 
 archive_daily_outputs() {
-    local year="${TARGET_DATE:0:4}"
-    local month="${TARGET_DATE:5:2}"
-    local report_target="$ARCHIVE_ROOT/reports/$year/$month/sui-audit-$TARGET_DATE.md"
-    local log_target="$ARCHIVE_ROOT/logs/$year/$month/s-ui-$TARGET_DATE.log.gz"
-    local warnings_target="$ARCHIVE_ROOT/warnings/$year/$month/$TARGET_DATE"
+    local month_dir="${TARGET_DATE:0:4}${TARGET_DATE:5:2}"
+    local report_target="$ARCHIVE_ROOT/reports/$month_dir/sui-audit-$TARGET_DATE.md"
+    local log_target="$ARCHIVE_ROOT/logs/$month_dir/s-ui-$TARGET_DATE.log.gz"
+    local warnings_target="$ARCHIVE_ROOT/warnings/$month_dir/$TARGET_DATE"
 
     archive_file_atomic "$MD_OUTPUT" "$report_target"
     ARCHIVED_REPORT="$report_target"
@@ -1021,19 +1020,17 @@ init_reports() {
     local report_archive_hint="未启用"
     local log_archive_hint="未启用"
     local warnings_archive_hint="未启用"
-    local year
-    local month
+    local month_dir
 
     if is_window_mode; then
-        year="${TARGET_DATE:0:4}"
-        month="${TARGET_DATE:5:2}"
-        report_archive_hint="$ARCHIVE_ROOT/reports/$year/$month/sui-audit-$TARGET_DATE.md"
+        month_dir="${TARGET_DATE:0:4}${TARGET_DATE:5:2}"
+        report_archive_hint="$ARCHIVE_ROOT/reports/$month_dir/sui-audit-$TARGET_DATE.md"
         if [[ "$NO_ARCHIVE_LOG" -eq 0 ]]; then
-            log_archive_hint="$ARCHIVE_ROOT/logs/$year/$month/s-ui-$TARGET_DATE.log.gz"
+            log_archive_hint="$ARCHIVE_ROOT/logs/$month_dir/s-ui-$TARGET_DATE.log.gz"
         else
             log_archive_hint="已禁用"
         fi
-        warnings_archive_hint="$ARCHIVE_ROOT/warnings/$year/$month/$TARGET_DATE"
+        warnings_archive_hint="$ARCHIVE_ROOT/warnings/$month_dir/$TARGET_DATE"
     fi
 
     cat > "$MD_OUTPUT" << EOF
@@ -1197,10 +1194,29 @@ estimate_user_ips() {
     USER_IP_METHOD["$user"]="neighbor-window"
 
     if [[ "$CONNECTION_ID_MODE" -eq 1 && -s "$CONN_IP_INDEX_FILE" ]]; then
-        { grep -oP '\[\K[0-9]+(?= [0-9]+ms\])' "$user_log" || true; } | sort | uniq > "${conn_ids_file}.all"
-        sed -n "1,${IP_SAMPLE_SIZE}p" "${conn_ids_file}.all" > "$conn_ids_file"
+        { grep -oP '\[\K[0-9]+(?= [0-9]+ms\])' "$user_log" || true; } | \
+            awk -v limit="$IP_SAMPLE_SIZE" -v seed="$RANDOM" '
+                BEGIN { srand(seed) }
+                {
+                    seen++
+                    if (seen <= limit) {
+                        sample[seen] = $0
+                    } else {
+                        slot = int(rand() * seen) + 1
+                        if (slot <= limit) {
+                            sample[slot] = $0
+                        }
+                    }
+                }
+                END {
+                    count = (seen < limit) ? seen : limit
+                    for (i = 1; i <= count; i++) {
+                        print sample[i]
+                    }
+                }
+            ' > "$conn_ids_file"
 
-        awk 'NR==FNR {wanted[$1]=1; next} ($1 in wanted) {print $2}' "$conn_ids_file" "$CONN_IP_INDEX_FILE" > "$raw_ips_file" || true
+        awk 'NR==FNR {ip_by_conn[$1]=$2; next} ($1 in ip_by_conn) {print ip_by_conn[$1]}' "$CONN_IP_INDEX_FILE" "$conn_ids_file" > "$raw_ips_file" || true
 
         sort "$raw_ips_file" | uniq -c | sort -rn > "$counted_ips_file"
         ip_count="$(wc -l < "$counted_ips_file" | tr -d ' ')"
@@ -1217,7 +1233,26 @@ estimate_user_ips() {
     { grep -n -F "$user_bracket" "$LOG_FILE" || true; } | \
         { grep -E "inbound (packet )?connection to" || true; } | \
         cut -d: -f1 | \
-        sed -n "1,${IP_SAMPLE_SIZE}p" > "$user_line_nums_file"
+        awk -v limit="$IP_SAMPLE_SIZE" -v seed="$RANDOM" '
+            BEGIN { srand(seed) }
+            {
+                seen++
+                if (seen <= limit) {
+                    sample[seen] = $0
+                } else {
+                    slot = int(rand() * seen) + 1
+                    if (slot <= limit) {
+                        sample[slot] = $0
+                    }
+                }
+            }
+            END {
+                count = (seen < limit) ? seen : limit
+                for (i = 1; i <= count; i++) {
+                    print sample[i]
+                }
+            }
+        ' | sort -n > "$user_line_nums_file"
 
     if [[ -s "$user_line_nums_file" && -s "$CONN_FROM_LINE_INDEX_FILE" ]]; then
         awk -v window=5 '
@@ -1717,7 +1752,7 @@ EOF
 ### 客户端IP统计方法
 - 优先通过 sing-box 连接ID精确关联客户端IP
 - 无连接ID或关联失败时，通过来源IP行号索引进行前后5行邻近窗口估算
-- 默认采样每个用户前 ${IP_SAMPLE_SIZE} 条连接记录，可用 --sample-size 调整
+- 默认随机采样每个用户 ${IP_SAMPLE_SIZE} 条连接记录，可用 --sample-size 调整
 - IP数量为估算值，实际可能略有差异
 
 ### 风险评分规则
