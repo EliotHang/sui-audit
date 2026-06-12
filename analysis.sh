@@ -20,7 +20,9 @@ OUTPUT_PREFIX="sui-滥用检测详细报告-v${SCRIPT_VERSION}"
 TOP_N=10
 IP_SAMPLE_SIZE=400
 KEEP_TEMP=0
-USER_FILTER_FILE=""
+USER_FILTER_FILE="users.list"
+USE_USER_FILTER=1
+USER_FILTER_CREATED=0
 DAILY_MODE=0
 CLEANUP_MODE=0
 CLEANUP_DRY_RUN=0
@@ -138,10 +140,10 @@ s-ui 日志滥用检测脚本 v${SCRIPT_VERSION}
 参数:
   -f, --file FILE          指定 s-ui 日志文件, 默认: s-ui.log
   -o, --output PREFIX      指定输出文件前缀，默认: ${OUTPUT_PREFIX}
-  -u, --users FILE         指定用户文件，只分析文件中列出的用户
+  -u, --users FILE         指定用户文件，只分析文件中列出的用户，默认: users.list
       --top-n N            Markdown 报告中展示访问目标 TOP N, 默认: ${TOP_N}
       --sample-size N      每个用户用于估算客户端 IP 的采样连接数，默认: ${IP_SAMPLE_SIZE}
-      --all-users          兼容旧参数；v4.0 默认已生成所有用户详情
+      --all-users          临时分析全部用户，但仍会自动创建默认 users.list
       --daily              分析日志时区昨日 00:00:00 到 23:59:59，并执行归档
       --date YYYY-MM-DD    分析指定日志日期 00:00:00 到 23:59:59，并执行归档
       --since DATETIME     指定分析起始时间，例如 "2026-05-16 00:00:00"
@@ -220,6 +222,7 @@ parse_args() {
             -u|--users)
                 [[ $# -ge 2 ]] || die "$1 需要一个用户文件路径"
                 USER_FILTER_FILE="$2"
+                USE_USER_FILTER=1
                 shift 2
                 ;;
             --top-n)
@@ -233,6 +236,7 @@ parse_args() {
                 shift 2
                 ;;
             --all-users)
+                USE_USER_FILTER=0
                 shift
                 ;;
             --daily)
@@ -352,9 +356,6 @@ check_dependencies() {
 init_runtime() {
     if [[ "$CLEANUP_MODE" -eq 0 ]]; then
         [[ -f "$LOG_FILE" ]] || die "找不到日志文件: $LOG_FILE"
-    fi
-    if [[ -n "$USER_FILTER_FILE" && "$CLEANUP_MODE" -eq 0 ]]; then
-        [[ -f "$USER_FILTER_FILE" ]] || die "找不到用户文件: $USER_FILTER_FILE"
     fi
     validate_number "--top-n" "$TOP_N"
     validate_number "--sample-size" "$IP_SAMPLE_SIZE"
@@ -903,18 +904,57 @@ normalize_user_filter() {
     sort -u "$normalized_file" -o "$normalized_file"
 }
 
+discover_users_from_log() {
+    local source_file="$1"
+    local output_file="$2"
+
+    { grep -oP '\[[a-zA-Z0-9_-]+\](?= inbound (packet )?connection to)' "$source_file" || true; } | \
+        { grep -Ev '^\[(718|socks|vless-reality.*|shadowsocks.*|trojan.*|vmess.*|vless-.*)\]$' || true; } | \
+        sort | uniq > "$output_file"
+}
+
+ensure_user_filter_file() {
+    local target_file="$1"
+    local discovered_file="$2"
+    local target_dir
+
+    [[ -n "$target_file" ]] || return 0
+    [[ -f "$target_file" ]] && return 0
+
+    target_dir="$(dirname "$target_file")"
+    if [[ "$target_dir" != "." ]]; then
+        mkdir -p "$target_dir"
+    fi
+    cp "$discovered_file" "$target_file"
+    USER_FILTER_CREATED=1
+    log_info "已创建用户列表: ${target_file}（默认包含当前日志中的全部用户）"
+}
+
 extract_users() {
+    local discovered_users_file="$TEMP_DIR/users.discovered.txt"
+    local user_list_seed_file="$TEMP_DIR/users.list.seed.txt"
+
     log_info "正在提取用户列表..."
 
-    { grep -oP '\[[a-zA-Z0-9_-]+\](?= inbound (packet )?connection to)' "$LOG_FILE" || true; } | \
-        { grep -Ev '^\[(718|socks|vless-reality.*|shadowsocks.*|trojan.*|vmess.*|vless-.*)\]$' || true; } | \
-        sort | uniq > "$TEMP_DIR/users.txt"
+    discover_users_from_log "$LOG_FILE" "$discovered_users_file"
+
+    cp "$discovered_users_file" "$TEMP_DIR/users.txt"
 
     if [[ -n "$USER_FILTER_FILE" ]]; then
-        normalize_user_filter "$USER_FILTER_FILE"
-        grep -Fxf "$TEMP_DIR/users_filter.txt" "$TEMP_DIR/users.txt" > "$TEMP_DIR/users.filtered.txt" || true
-        mv "$TEMP_DIR/users.filtered.txt" "$TEMP_DIR/users.txt"
-        log_info "已按用户文件过滤: ${USER_FILTER_FILE}"
+        if [[ -n "$SOURCE_LOG_FILE" && -f "$SOURCE_LOG_FILE" ]]; then
+            discover_users_from_log "$SOURCE_LOG_FILE" "$user_list_seed_file"
+        else
+            cp "$discovered_users_file" "$user_list_seed_file"
+        fi
+        ensure_user_filter_file "$USER_FILTER_FILE" "$user_list_seed_file"
+        if [[ "$USE_USER_FILTER" -eq 1 ]]; then
+            normalize_user_filter "$USER_FILTER_FILE"
+            grep -Fxf "$TEMP_DIR/users_filter.txt" "$TEMP_DIR/users.txt" > "$TEMP_DIR/users.filtered.txt" || true
+            mv "$TEMP_DIR/users.filtered.txt" "$TEMP_DIR/users.txt"
+            log_info "已按用户文件过滤: ${USER_FILTER_FILE}"
+        else
+            log_info "已跳过用户文件过滤，本次分析全部用户: ${USER_FILTER_FILE}"
+        fi
     fi
 
     USER_COUNT="$(wc -l < "$TEMP_DIR/users.txt" | tr -d ' ')"
@@ -1051,6 +1091,8 @@ init_reports() {
 分析时间: $(TZ="$LOG_DATE_TZ" date '+%Y年%m月%d日 %H:%M:%S')
 日志文件: ${display_log_file}
 用户过滤文件: ${USER_FILTER_FILE:-未指定}
+用户过滤启用: ${USE_USER_FILTER}
+用户列表自动创建: ${USER_FILTER_CREATED}
 自动化窗口: ${ANALYSIS_WINDOW_LABEL:-完整日志}
 归档根目录: ${ARCHIVE_ROOT}
 报告归档路径: ${report_archive_hint}

@@ -220,14 +220,8 @@ main() {
     if [[ "$log_file" =~ [[:space:]] ]]; then
         die "日志文件路径包含空格，systemd ExecStart 暂不支持: $log_file"
     fi
-    daily_args="-f $log_file"
-
-    if [[ -f "$script_dir/users.list" ]]; then
-        daily_args="$daily_args -u users.list"
-        log_info "检测到 users.list，每日审计将按用户文件过滤"
-    else
-        log_warn "未检测到 users.list，每日审计将分析日志中的全部用户"
-    fi
+    daily_args="-f $log_file -u users.list"
+    log_info "每日审计将使用 users.list；首次运行会自动创建并包含全部用户"
 
     mkdir -p "$systemd_dir"
 

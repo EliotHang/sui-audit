@@ -35,6 +35,8 @@ Runtime files are intentionally ignored:
 - `warnings/`
 - `users.list`
 
+`analysis.sh` creates `users.list` automatically when it is missing. The initial file contains every user found in the current log, so later you can edit it to keep only the users you want daily audits to include.
+
 ## Schedule
 
 - Update check: local VPS time `01:50`
