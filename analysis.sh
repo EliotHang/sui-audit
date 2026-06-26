@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# s-ui日志综合滥用检测脚本 v4.1
+# s-ui日志综合滥用检测脚本 v4.1.2
 # 改进：本地日自动审计、Telegram全用户摘要、每周总结、每月清理并重启服务
 
 set -Eeuo pipefail
@@ -13,7 +13,7 @@ if (( BASH_VERSINFO[0] < 4 )); then
     exit 2
 fi
 
-SCRIPT_VERSION="4.1.1"
+SCRIPT_VERSION="4.1.2"
 
 LOG_FILE="s-ui.log"
 OUTPUT_PREFIX="sui-滥用检测详细报告-v${SCRIPT_VERSION}"
@@ -142,7 +142,7 @@ s-ui 日志滥用检测脚本 v${SCRIPT_VERSION}
   -o, --output PREFIX      指定输出文件前缀，默认: ${OUTPUT_PREFIX}
   -u, --users FILE         指定用户文件，只分析文件中列出的用户，默认: users.list
       --top-n N            Markdown 报告中展示访问目标 TOP N, 默认: ${TOP_N}
-      --sample-size N      每个用户用于估算客户端 IP 的采样连接数，默认: ${IP_SAMPLE_SIZE}
+      --sample-size N      邻近行回退模式下用于估算客户端 IP 的随机采样连接数，默认: ${IP_SAMPLE_SIZE}
       --all-users          临时分析全部用户，但仍会自动创建默认 users.list
       --daily              分析日志时区昨日 00:00:00 到 23:59:59，并执行归档
       --date YYYY-MM-DD    分析指定日志日期 00:00:00 到 23:59:59，并执行归档
@@ -1236,27 +1236,7 @@ estimate_user_ips() {
     USER_IP_METHOD["$user"]="neighbor-window"
 
     if [[ "$CONNECTION_ID_MODE" -eq 1 && -s "$CONN_IP_INDEX_FILE" ]]; then
-        { grep -oP '\[\K[0-9]+(?= [0-9]+ms\])' "$user_log" || true; } | \
-            awk -v limit="$IP_SAMPLE_SIZE" -v seed="$RANDOM" '
-                BEGIN { srand(seed) }
-                {
-                    seen++
-                    if (seen <= limit) {
-                        sample[seen] = $0
-                    } else {
-                        slot = int(rand() * seen) + 1
-                        if (slot <= limit) {
-                            sample[slot] = $0
-                        }
-                    }
-                }
-                END {
-                    count = (seen < limit) ? seen : limit
-                    for (i = 1; i <= count; i++) {
-                        print sample[i]
-                    }
-                }
-            ' > "$conn_ids_file"
+        { grep -oP '\[\K[0-9]+(?= [0-9]+ms\])' "$user_log" || true; } > "$conn_ids_file"
 
         awk 'NR==FNR {ip_by_conn[$1]=$2; next} ($1 in ip_by_conn) {print ip_by_conn[$1]}' "$CONN_IP_INDEX_FILE" "$conn_ids_file" > "$raw_ips_file" || true
 
@@ -1792,9 +1772,9 @@ EOF
 ## 📊 数据说明
 
 ### 客户端IP统计方法
-- 优先通过 sing-box 连接ID精确关联客户端IP
+- 优先通过 sing-box 连接ID全量关联并统计客户端IP
 - 无连接ID或关联失败时，通过来源IP行号索引进行前后5行邻近窗口估算
-- 默认随机采样每个用户 ${IP_SAMPLE_SIZE} 条连接记录，可用 --sample-size 调整
+- 邻近行回退模式默认随机采样每个用户 ${IP_SAMPLE_SIZE} 条连接记录，可用 --sample-size 调整
 - IP数量为估算值，实际可能略有差异
 
 ### 风险评分规则
