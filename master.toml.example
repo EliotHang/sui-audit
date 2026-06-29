@@ -1,6 +1,6 @@
 [server]
 bind = "127.0.0.1:8787"
-public_base_url = "https://audit.example.com"
+public_base_url = "https://audit.990829.xyz"
 
 [telegram]
 mode = "long_poll"

@@ -73,7 +73,7 @@ Recommended network shape:
 Telegram <-> sui-audit-master <-> sui-audit-worker -> run.sh / analysis.sh
 ```
 
-Use a domain such as `https://audit.example.com` for the master and put Caddy or Nginx in front of the master process:
+The default master URL is `https://audit.990829.xyz`. Put Caddy or Nginx in front of the master process:
 
 ```text
 Caddy/Nginx :443 -> sui-audit-master 127.0.0.1:8787

@@ -100,7 +100,7 @@ write_master_toml() {
     if [[ "$NON_INTERACTIVE" -eq 0 ]]; then
         printf '\n[Master 配置]\n'
         printf '如果你暂时只测试 Telegram long polling，Public URL 可以先保留默认值。\n\n'
-        public_base_url="$(ask 'Master public URL' "${public_base_url:-https://audit.example.com}")"
+        public_base_url="$(ask 'Master public URL' "${public_base_url:-https://audit.990829.xyz}")"
         bind_addr="$(ask 'Master listen address' "$bind_addr")"
 
         printf '\n[Telegram 权限]\n'
@@ -108,7 +108,7 @@ write_master_toml() {
         allowed_chat_ids="$(ask 'Allowed Telegram chat IDs' "$allowed_chat_ids")"
         allowed_user_ids="$(ask 'Allowed Telegram user IDs' "$allowed_user_ids")"
     else
-        public_base_url="${public_base_url:-https://audit.example.com}"
+        public_base_url="${public_base_url:-https://audit.990829.xyz}"
     fi
 
     write_root_file "$target" << EOF

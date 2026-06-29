@@ -4,7 +4,7 @@ name = "vps-hk-01"
 tags = ["s-ui", "prod"]
 
 [master]
-url = "https://audit.example.com"
+url = "https://audit.990829.xyz"
 token_env = "SUI_AUDIT_WORKER_TOKEN"
 poll_interval_seconds = 15
 
