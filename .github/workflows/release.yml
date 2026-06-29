@@ -53,6 +53,7 @@ jobs:
           install -m 0755 install_master.sh "dist/${PACKAGE_NAME}/install_master.sh"
           install -m 0755 install_worker.sh "dist/${PACKAGE_NAME}/install_worker.sh"
           install -m 0755 bootstrap_master.sh "dist/${PACKAGE_NAME}/bootstrap_master.sh"
+          install -m 0755 bootstrap_worker.sh "dist/${PACKAGE_NAME}/bootstrap_worker.sh"
           install -m 0644 master.toml.example "dist/${PACKAGE_NAME}/master.toml.example"
           install -m 0644 worker.toml.example "dist/${PACKAGE_NAME}/worker.toml.example"
           install -m 0644 VERSION "dist/${PACKAGE_NAME}/VERSION"

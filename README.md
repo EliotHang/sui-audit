@@ -115,6 +115,14 @@ For this development branch before it is merged to `main`, use:
 bash <(curl -fsSL https://raw.githubusercontent.com/EliotHang/sui-audit/feature/master-worker-5.0/bootstrap_master.sh)
 ```
 
+Install a worker directly from the GitHub Release on a Debian/Ubuntu VPS:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/EliotHang/sui-audit/feature/master-worker-5.0/bootstrap_worker.sh)
+```
+
+The worker installer automatically generates a UUID-style worker id and uses `https://audit.990829.xyz` as the default master URL. Copy the Worker Token from the master install and paste it into the worker installer.
+
 Master install flow:
 
 ```bash

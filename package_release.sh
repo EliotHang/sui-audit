@@ -39,6 +39,7 @@ main() {
     install -m 0755 install_master.sh "$DIST_DIR/install_master.sh"
     install -m 0755 install_worker.sh "$DIST_DIR/install_worker.sh"
     install -m 0755 bootstrap_master.sh "$DIST_DIR/bootstrap_master.sh"
+    install -m 0755 bootstrap_worker.sh "$DIST_DIR/bootstrap_worker.sh"
     install -m 0644 master.toml.example "$DIST_DIR/master.toml.example"
     install -m 0644 worker.toml.example "$DIST_DIR/worker.toml.example"
     install -m 0644 VERSION "$DIST_DIR/VERSION"
