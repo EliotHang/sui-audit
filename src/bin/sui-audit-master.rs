@@ -115,26 +115,46 @@ async fn worker_poll(
     Json(req): Json<WorkerPollRequest>,
 ) -> Result<Json<WorkerPollResponse>, AppError> {
     authorize_worker(&state, bearer_token(&headers)?)?;
-    let db = state.db.lock().map_err(|_| AppError::internal("db lock"))?;
+    let tags_json = serde_json::to_string(&req.tags).unwrap_or_else(|_| "[]".to_string());
     let now = now_ts();
-    db.execute(
-        "insert into workers(worker_id, name, tags_json, version, last_seen_at)
-         values(?1, ?2, ?3, ?4, ?5)
-         on conflict(worker_id) do update set
-           name=excluded.name,
-           tags_json=excluded.tags_json,
-           version=excluded.version,
-           last_seen_at=excluded.last_seen_at",
-        params![
+    let (job, is_new_worker) = {
+        let db = state.db.lock().map_err(|_| AppError::internal("db lock"))?;
+        let is_new_worker = !worker_exists(&db, &req.worker_id)?;
+        db.execute(
+            "insert into workers(worker_id, name, tags_json, version, last_seen_at)
+             values(?1, ?2, ?3, ?4, ?5)
+             on conflict(worker_id) do update set
+               name=excluded.name,
+               tags_json=excluded.tags_json,
+               version=excluded.version,
+               last_seen_at=excluded.last_seen_at",
+            params![req.worker_id, req.worker_name, tags_json, req.version, now],
+        )?;
+
+        let job = claim_next_job(&db, &req.worker_id, now)?;
+        (job, is_new_worker)
+    };
+
+    if is_new_worker {
+        let message = format!(
+            "新 worker 已注册\nid: {}\nname: {}\ntags: {}\nversion: {}",
             req.worker_id,
             req.worker_name,
-            serde_json::to_string(&req.tags).unwrap_or_else(|_| "[]".to_string()),
-            req.version,
-            now
-        ],
-    )?;
+            if req.tags.is_empty() {
+                "-".to_string()
+            } else {
+                req.tags.join(",")
+            },
+            req.version
+        );
+        let telegram = state.telegram.clone();
+        tokio::spawn(async move {
+            if let Err(err) = telegram.send_allowed_chats(&message).await {
+                warn!("telegram send worker registration failed: {err:#}");
+            }
+        });
+    }
 
-    let job = claim_next_job(&db, &req.worker_id, now)?;
     Ok(Json(WorkerPollResponse { job }))
 }
 
@@ -261,6 +281,15 @@ fn claim_next_job(db: &Connection, worker_id: &str, now: i64) -> Result<Option<J
     }))
 }
 
+fn worker_exists(db: &Connection, worker_id: &str) -> Result<bool, AppError> {
+    let exists: i64 = db.query_row(
+        "select exists(select 1 from workers where worker_id=?1)",
+        params![worker_id],
+        |row| row.get(0),
+    )?;
+    Ok(exists == 1)
+}
+
 fn create_job(
     db: &Connection,
     job_type: &str,
@@ -326,6 +355,15 @@ impl TelegramClient {
             .send()
             .await?
             .error_for_status()?;
+        Ok(())
+    }
+
+    async fn send_allowed_chats(&self, text: &str) -> Result<()> {
+        for chat_id in &self.allowed_chat_ids {
+            if let Err(err) = self.send_message(chat_id, text).await {
+                warn!("telegram send to chat {chat_id} failed: {err:#}");
+            }
+        }
         Ok(())
     }
 
@@ -419,6 +457,10 @@ async fn build_job_from_command(
     let parts: Vec<&str> = text.split_whitespace().collect();
     match parts.as_slice() {
         ["/status"] => Ok("master online".to_string()),
+        ["/worker_token"] => Ok(format!(
+            "Worker Token:\n{}\n\n请在 worker 安装器里粘贴这个 token。",
+            state.worker_token
+        )),
         ["/workers"] => {
             let db = state.db.lock().map_err(|_| anyhow::anyhow!("db lock"))?;
             let mut stmt =
@@ -477,7 +519,7 @@ async fn build_job_from_command(
             message_id,
         ),
         _ => Ok(
-            "支持命令: /status /workers /jobs /report_user WORKER USER [day|week] [YYYY-MM-DD]"
+            "支持命令: /status /worker_token /workers /jobs /report_user WORKER USER [day|week] [YYYY-MM-DD]"
                 .to_string(),
         ),
     }
