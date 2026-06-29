@@ -1,4 +1,11 @@
 .DS_Store
+AGENT.md
+doc/agent/
+target/
+master.toml
+worker.toml
+master.env
+worker.env
 telegram.conf
 .install.conf
 users.list

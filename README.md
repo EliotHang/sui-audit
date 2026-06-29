@@ -59,6 +59,87 @@ By default, `bootstrap.sh` installs into the directory where you run the command
 ./uninstall.sh --purge
 ```
 
+## v0 Master / Worker Preview
+
+Version `v0.0.0` starts the Rust-based master/worker control plane while keeping the Bash audit engine in place. `v1` is reserved for the first formal stable release.
+
+- `sui-audit-master`: talks to Telegram, stores jobs, and exposes worker polling APIs.
+- `sui-audit-worker`: polls the master over HTTPS, runs local audit commands, and reports results back.
+- Workers should not talk to Telegram directly in the new mode; the master sends Telegram messages.
+
+Recommended network shape:
+
+```text
+Telegram <-> sui-audit-master <-> sui-audit-worker -> run.sh / analysis.sh
+```
+
+Use a domain such as `https://audit.example.com` for the master and put Caddy or Nginx in front of the master process:
+
+```text
+Caddy/Nginx :443 -> sui-audit-master 127.0.0.1:8787
+```
+
+The GitHub repository can contain Rust source under `src/`, but production hosts do not need the source tree or Rust toolchain. Build a release package locally or in CI:
+
+```bash
+cargo build --release --bins
+./package_release.sh
+```
+
+The package contains only the master/worker binaries, install scripts, config examples, and `VERSION`.
+
+For Linux servers, prefer GitHub Actions release builds instead of compiling on macOS. Push a tag to build and publish a Linux amd64 package:
+
+```bash
+git tag v0.0.0
+git push origin v0.0.0
+```
+
+The release asset will be named like:
+
+```text
+sui-audit-0.0.0-linux-amd64.tar.gz
+```
+
+Use `uname -m` on the server. `x86_64` servers should use the `linux-amd64` package.
+
+Install the master directly from the GitHub Release on a Debian/Ubuntu VPS:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/EliotHang/sui-audit/main/bootstrap_master.sh)
+```
+
+For this development branch before it is merged to `main`, use:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/EliotHang/sui-audit/feature/master-worker-5.0/bootstrap_master.sh)
+```
+
+Master install flow:
+
+```bash
+tar -xzf sui-audit-<version>.tar.gz
+cd sui-audit-<version>
+sudo ./install_master.sh
+sudo install -m 0600 master.toml.example /opt/sui-audit-master/master.toml
+sudo nano /opt/sui-audit-master/master.toml
+sudo nano /opt/sui-audit-master/master.env
+sudo systemctl restart sui-audit-master
+```
+
+Worker install flow:
+
+```bash
+tar -xzf sui-audit-<version>.tar.gz
+cd sui-audit-<version>
+sudo ./install_worker.sh
+sudo nano /opt/sui-audit-worker/worker.toml
+sudo nano /opt/sui-audit-worker/worker.env
+sudo systemctl restart sui-audit-worker
+```
+
+Keep secrets out of git. Put Telegram bot tokens and worker tokens in `master.env` / `worker.env`, not in committed config files.
+
 ## Update
 
 `run.sh` refreshes `analysis.sh` from GitHub before each audit task. If the network is temporarily unavailable, it falls back to the existing local `analysis.sh`.

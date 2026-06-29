@@ -1,0 +1,16 @@
+[server]
+bind = "127.0.0.1:8787"
+public_base_url = "https://audit.example.com"
+
+[telegram]
+mode = "long_poll"
+bot_token_env = "SUI_AUDIT_TELEGRAM_BOT_TOKEN"
+allowed_chat_ids = ["-1001234567890"]
+allowed_user_ids = ["123456789"]
+poll_timeout_seconds = 20
+
+[worker_auth]
+token_env = "SUI_AUDIT_WORKER_TOKEN"
+
+[state]
+db_path = "state/master.db"

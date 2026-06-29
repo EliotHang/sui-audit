@@ -1,0 +1,79 @@
+name: Release Linux Binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version/name for manual builds"
+        required: false
+        default: "manual"
+
+permissions:
+  contents: write
+
+jobs:
+  linux-amd64:
+    name: Build linux-amd64
+    runs-on: ubuntu-22.04
+    env:
+      TARGET: x86_64-unknown-linux-gnu
+      PACKAGE_SUFFIX: linux-amd64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add "$TARGET"
+          rustc --version
+          cargo --version
+
+      - name: Build
+        run: cargo build --locked --release --bins --target "$TARGET"
+
+      - name: Package
+        id: package
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${{ inputs.version }}"
+          fi
+
+          PACKAGE_NAME="sui-audit-${VERSION}-${PACKAGE_SUFFIX}"
+          mkdir -p "dist/${PACKAGE_NAME}"
+
+          install -m 0755 "target/${TARGET}/release/sui-audit-master" "dist/${PACKAGE_NAME}/sui-audit-master"
+          install -m 0755 "target/${TARGET}/release/sui-audit-worker" "dist/${PACKAGE_NAME}/sui-audit-worker"
+          install -m 0755 install_master.sh "dist/${PACKAGE_NAME}/install_master.sh"
+          install -m 0755 install_worker.sh "dist/${PACKAGE_NAME}/install_worker.sh"
+          install -m 0755 bootstrap_master.sh "dist/${PACKAGE_NAME}/bootstrap_master.sh"
+          install -m 0644 master.toml.example "dist/${PACKAGE_NAME}/master.toml.example"
+          install -m 0644 worker.toml.example "dist/${PACKAGE_NAME}/worker.toml.example"
+          install -m 0644 VERSION "dist/${PACKAGE_NAME}/VERSION"
+
+          tar -C dist -czf "dist/${PACKAGE_NAME}.tar.gz" "${PACKAGE_NAME}"
+          echo "archive=dist/${PACKAGE_NAME}.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sui-audit-linux-amd64
+          path: ${{ steps.package.outputs.archive }}
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${{ steps.package.outputs.archive }}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${{ steps.package.outputs.archive }}" --generate-notes
+          fi

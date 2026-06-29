@@ -1,0 +1,16 @@
+[worker]
+id = "hk-01"
+name = "vps-hk-01"
+tags = ["s-ui", "prod"]
+
+[master]
+url = "https://audit.example.com"
+token_env = "SUI_AUDIT_WORKER_TOKEN"
+poll_interval_seconds = 15
+
+[audit]
+repo_dir = "/opt/sui-audit"
+run_script = "/opt/sui-audit/run.sh"
+
+[telegram]
+send_direct = false
