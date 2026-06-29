@@ -123,6 +123,19 @@ bash <(curl -fsSL https://raw.githubusercontent.com/EliotHang/sui-audit/feature/
 
 The worker installer automatically generates a UUID-style worker id and uses `https://audit.990829.xyz` as the default master URL. Copy the Worker Token from the master install and paste it into the worker installer.
 
+Update an existing master or worker from the same release line without touching local config:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/EliotHang/sui-audit/feature/master-worker-5.0/bootstrap_master.sh) --update
+bash <(curl -fsSL https://raw.githubusercontent.com/EliotHang/sui-audit/feature/master-worker-5.0/bootstrap_worker.sh) --update
+```
+
+To update to a specific release later:
+
+```bash
+SUI_AUDIT_RELEASE_VERSION=0.0.1 bash <(curl -fsSL https://raw.githubusercontent.com/EliotHang/sui-audit/feature/master-worker-5.0/bootstrap_master.sh) --update
+```
+
 Master install flow:
 
 ```bash

@@ -137,15 +137,8 @@ async fn worker_poll(
 
     if is_new_worker {
         let message = format!(
-            "新 worker 已注册\nid: {}\nname: {}\ntags: {}\nversion: {}",
-            req.worker_id,
-            req.worker_name,
-            if req.tags.is_empty() {
-                "-".to_string()
-            } else {
-                req.tags.join(",")
-            },
-            req.version
+            "新 worker 已注册\nid: {}\nname: {}\nversion: {}",
+            req.worker_id, req.worker_name, req.version
         );
         let telegram = state.telegram.clone();
         tokio::spawn(async move {
