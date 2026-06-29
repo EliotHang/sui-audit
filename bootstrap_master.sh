@@ -69,13 +69,9 @@ main() {
     [[ -d "$package_dir" ]] || die "release 包结构异常，找不到目录: $package_dir"
 
     log_info "安装 master 到: ${INSTALL_DIR}"
-    SUI_AUDIT_MASTER_DIR="$INSTALL_DIR" bash "$package_dir/install_master.sh"
+    SUI_AUDIT_MASTER_DIR="$INSTALL_DIR" bash "$package_dir/install_master.sh" "$@"
 
     log_info "安装完成"
-    log_info "下一步:"
-    log_info "  编辑 ${INSTALL_DIR}/master.toml"
-    log_info "  编辑 ${INSTALL_DIR}/master.env"
-    log_info "  systemctl restart sui-audit-master"
 }
 
 main "$@"
