@@ -89,11 +89,9 @@ update_worker() {
     local package_dir="$1"
 
     [[ -x "$package_dir/sui-audit-worker" ]] || die "release 包缺少 sui-audit-worker"
-    as_root install -d -m 0755 "$INSTALL_DIR"
-    as_root install -m 0755 "$package_dir/sui-audit-worker" "$INSTALL_DIR/sui-audit-worker"
-    as_root systemctl daemon-reload
+    SUI_AUDIT_WORKER_DIR="$INSTALL_DIR" bash "$package_dir/install_worker.sh" --non-interactive
     as_root systemctl restart sui-audit-worker
-    log_info "worker 已更新并重启: sui-audit-worker"
+    log_info "worker 已更新并重启，配置文件已保留: sui-audit-worker"
 }
 
 main() {

@@ -89,11 +89,9 @@ update_master() {
     local package_dir="$1"
 
     [[ -x "$package_dir/sui-audit-master" ]] || die "release 包缺少 sui-audit-master"
-    as_root install -d -m 0755 "$INSTALL_DIR"
-    as_root install -m 0755 "$package_dir/sui-audit-master" "$INSTALL_DIR/sui-audit-master"
-    as_root systemctl daemon-reload
+    SUI_AUDIT_MASTER_DIR="$INSTALL_DIR" bash "$package_dir/install_master.sh" --non-interactive
     as_root systemctl restart sui-audit-master
-    log_info "master 已更新并重启: sui-audit-master"
+    log_info "master 已更新并重启，配置文件已保留: sui-audit-master"
 }
 
 main() {
