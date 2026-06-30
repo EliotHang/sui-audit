@@ -360,6 +360,45 @@ impl TelegramClient {
         Ok(())
     }
 
+    async fn send_message_with_keyboard(
+        &self,
+        chat_id: &str,
+        text: &str,
+        reply_markup: Value,
+    ) -> Result<()> {
+        let Some(token) = &self.token else {
+            return Ok(());
+        };
+        let url = format!("https://api.telegram.org/bot{token}/sendMessage");
+        self.client
+            .post(url)
+            .json(&json!({
+                "chat_id": chat_id,
+                "text": text,
+                "reply_markup": reply_markup
+            }))
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(())
+    }
+
+    async fn answer_callback_query(&self, callback_query_id: &str) -> Result<()> {
+        let Some(token) = &self.token else {
+            return Ok(());
+        };
+        let url = format!("https://api.telegram.org/bot{token}/answerCallbackQuery");
+        self.client
+            .post(url)
+            .json(&json!({
+                "callback_query_id": callback_query_id
+            }))
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(())
+    }
+
     async fn send_allowed_chats(&self, text: &str) -> Result<()> {
         for chat_id in &self.allowed_chat_ids {
             if let Err(err) = self.send_message(chat_id, text).await {
@@ -398,7 +437,7 @@ async fn telegram_loop(state: AppState) -> Result<()> {
         let url = format!("https://api.telegram.org/bot{token}/getUpdates");
         let mut body = json!({
             "timeout": state.telegram.poll_timeout_seconds,
-            "allowed_updates": ["message"]
+            "allowed_updates": ["message", "callback_query"]
         });
         if let Some(offset) = offset {
             body["offset"] = json!(offset);
@@ -422,8 +461,69 @@ async fn telegram_loop(state: AppState) -> Result<()> {
             if let Some(message) = update.message {
                 handle_telegram_message(&state, message).await?;
             }
+            if let Some(callback_query) = update.callback_query {
+                handle_telegram_callback_query(&state, callback_query).await?;
+            }
         }
     }
+}
+
+async fn send_workers_menu(state: &AppState, chat_id: &str) -> Result<()> {
+    let (text, keyboard) = {
+        let db = state.db.lock().map_err(|_| anyhow::anyhow!("db lock"))?;
+        let workers = fetch_workers(&db)?;
+        if workers.is_empty() {
+            ("暂无 worker".to_string(), json!({"inline_keyboard": []}))
+        } else {
+            let now = now_ts();
+            let rows = workers
+                .iter()
+                .map(|worker| {
+                    vec![json!({
+                        "text": format!(
+                            "{} {} ({})",
+                            worker_status(worker.last_seen_at, now),
+                            worker.name,
+                            short_worker_id(&worker.worker_id)
+                        ),
+                        "callback_data": format!("w:{}", worker.worker_id)
+                    })]
+                })
+                .collect::<Vec<_>>();
+            (
+                "请选择 worker".to_string(),
+                json!({"inline_keyboard": rows}),
+            )
+        }
+    };
+    state
+        .telegram
+        .send_message_with_keyboard(chat_id, &text, keyboard)
+        .await
+}
+
+async fn send_worker_actions(state: &AppState, chat_id: &str, worker_id: &str) -> Result<()> {
+    let detail = show_worker(state, worker_id)?;
+    let keyboard = json!({
+        "inline_keyboard": [
+            [
+                {"text": "昨日审计", "callback_data": format!("daily:{worker_id}")},
+                {"text": "周总结", "callback_data": format!("weekly:{worker_id}")}
+            ],
+            [
+                {"text": "上月报告", "callback_data": format!("monthly:{worker_id}")},
+                {"text": "用户报告", "callback_data": format!("user:{worker_id}")}
+            ],
+            [
+                {"text": "Ping", "callback_data": format!("ping:{worker_id}")},
+                {"text": "返回列表", "callback_data": "workers"}
+            ]
+        ]
+    });
+    state
+        .telegram
+        .send_message_with_keyboard(chat_id, &detail, keyboard)
+        .await
 }
 
 async fn handle_telegram_message(state: &AppState, message: TelegramMessage) -> Result<()> {
@@ -433,6 +533,11 @@ async fn handle_telegram_message(state: &AppState, message: TelegramMessage) -> 
     let user_id = message.from.as_ref().map(|user| user.id);
     if !state.telegram.allowed(message.chat.id, user_id) {
         warn!("ignored telegram message from unauthorized chat/user");
+        return Ok(());
+    }
+
+    if text == "/workers" || text == "/menu" || text == "/start" {
+        send_workers_menu(state, &message.chat.id.to_string()).await?;
         return Ok(());
     }
 
@@ -448,6 +553,88 @@ async fn handle_telegram_message(state: &AppState, message: TelegramMessage) -> 
         .send_message(&message.chat.id.to_string(), &reply)
         .await?;
     Ok(())
+}
+
+async fn handle_telegram_callback_query(
+    state: &AppState,
+    callback_query: TelegramCallbackQuery,
+) -> Result<()> {
+    let Some(message) = callback_query.message else {
+        return Ok(());
+    };
+    if !state
+        .telegram
+        .allowed(message.chat.id, Some(callback_query.from.id))
+    {
+        warn!("ignored telegram callback from unauthorized chat/user");
+        return Ok(());
+    }
+
+    state
+        .telegram
+        .answer_callback_query(&callback_query.id)
+        .await?;
+
+    let Some(data) = callback_query.data.as_deref() else {
+        return Ok(());
+    };
+    let chat_id = message.chat.id.to_string();
+    let reply = match handle_callback_data(state, data, chat_id.clone(), message.message_id).await {
+        Ok(reply) => reply,
+        Err(err) => format!("操作失败: {err:#}"),
+    };
+    state.telegram.send_message(&chat_id, &reply).await?;
+    Ok(())
+}
+
+async fn handle_callback_data(
+    state: &AppState,
+    data: &str,
+    chat_id: String,
+    message_id: i64,
+) -> Result<String> {
+    if data == "workers" {
+        send_workers_menu(state, &chat_id).await?;
+        return Ok("已刷新 worker 列表".to_string());
+    }
+    if let Some(worker_id) = data.strip_prefix("w:") {
+        send_worker_actions(state, &chat_id, worker_id).await?;
+        return Ok("请选择操作".to_string());
+    }
+    if let Some(worker_id) = data.strip_prefix("ping:") {
+        return enqueue_ping_worker(state, worker_id, chat_id, message_id);
+    }
+    if let Some(worker_id) = data.strip_prefix("daily:") {
+        return enqueue_worker_job(
+            state,
+            worker_id,
+            "daily_audit",
+            json!({}),
+            chat_id,
+            message_id,
+            "昨日审计",
+        );
+    }
+    if let Some(worker_id) = data.strip_prefix("weekly:") {
+        return enqueue_worker_job(
+            state,
+            worker_id,
+            "weekly_summary",
+            json!({}),
+            chat_id,
+            message_id,
+            "周总结",
+        );
+    }
+    if data.starts_with("monthly:") {
+        return Ok("上月报告还未接入；下一步会补 monthly summary job。".to_string());
+    }
+    if let Some(worker_id) = data.strip_prefix("user:") {
+        return Ok(format!(
+            "用户详细报告请输入:\n/report_user {worker_id} USER_ID day\n/report_user {worker_id} USER_ID week"
+        ));
+    }
+    anyhow::bail!("未知按钮: {data}")
 }
 
 async fn build_job_from_command(
@@ -576,6 +763,37 @@ fn enqueue_ping_worker(
     ))
 }
 
+fn enqueue_worker_job(
+    state: &AppState,
+    worker_id: &str,
+    job_type: &str,
+    args: Value,
+    chat_id: String,
+    message_id: i64,
+    label: &str,
+) -> Result<String> {
+    let db = state.db.lock().map_err(|_| anyhow::anyhow!("db lock"))?;
+    let exists: i64 = db.query_row(
+        "select exists(select 1 from workers where worker_id=?1)",
+        params![worker_id],
+        |row| row.get(0),
+    )?;
+    if exists != 1 {
+        anyhow::bail!("找不到 worker: {worker_id}");
+    }
+    let job_id = create_job(
+        &db,
+        job_type,
+        Some(worker_id),
+        args,
+        Some(&chat_id),
+        Some(message_id),
+    )?;
+    Ok(format!(
+        "已创建 {label} 任务 {job_id}，等待 worker {worker_id} 领取"
+    ))
+}
+
 fn fetch_workers(db: &Connection) -> Result<Vec<WorkerRow>> {
     let mut stmt = db.prepare(
         "select worker_id, name, tags_json, version, last_seen_at from workers order by last_seen_at desc",
@@ -620,6 +838,10 @@ fn format_worker_summary(worker: &WorkerRow, now: i64) -> String {
         human_duration(now.saturating_sub(worker.last_seen_at)),
         worker.version
     )
+}
+
+fn short_worker_id(worker_id: &str) -> String {
+    worker_id.chars().take(8).collect()
 }
 
 fn worker_status(last_seen_at: i64, now: i64) -> &'static str {
@@ -688,6 +910,7 @@ struct TelegramUpdates {
 struct TelegramUpdate {
     update_id: i64,
     message: Option<TelegramMessage>,
+    callback_query: Option<TelegramCallbackQuery>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -696,6 +919,14 @@ struct TelegramMessage {
     from: Option<TelegramUser>,
     chat: TelegramChat,
     text: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TelegramCallbackQuery {
+    id: String,
+    from: TelegramUser,
+    message: Option<TelegramMessage>,
+    data: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -134,6 +134,8 @@ Useful Telegram commands for the control plane:
 /jobs
 ```
 
+`/workers`, `/menu`, and `/start` open an inline button menu. Select a worker to run ping, yesterday audit, weekly summary, or get the user-report command format.
+
 Update an existing master or worker from the same release line without touching local config:
 
 ```bash

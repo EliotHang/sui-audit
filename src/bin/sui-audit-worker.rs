@@ -77,6 +77,8 @@ async fn poll_once(client: &Client, config: &WorkerConfig, token: &str) -> Resul
 async fn run_job(config: &WorkerConfig, job: Job) -> Result<()> {
     let result = match job.job_type.as_str() {
         "ping" => Ok(run_ping(config, &job)),
+        "daily_audit" => run_audit_command(config, &job, "昨日审计", &["--daily"]).await,
+        "weekly_summary" => run_audit_command(config, &job, "周总结", &["--weekly-summary"]).await,
         "user_report" => run_user_report(config, &job).await,
         other => Ok(WorkerResultRequest {
             job_id: job.job_id.clone(),
@@ -89,6 +91,57 @@ async fn run_job(config: &WorkerConfig, job: Job) -> Result<()> {
     }?;
 
     send_result(config, result).await
+}
+
+async fn run_audit_command(
+    config: &WorkerConfig,
+    job: &Job,
+    label: &str,
+    args: &[&str],
+) -> Result<WorkerResultRequest> {
+    let mut command = Command::new(&config.audit.run_script);
+    command.current_dir(&config.audit.repo_dir);
+    for arg in args {
+        command.arg(arg);
+    }
+
+    let output = command.output().context("run audit command")?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{stdout}{stderr}");
+    let report_path = extract_report_path(&combined);
+
+    if output.status.success() {
+        Ok(WorkerResultRequest {
+            job_id: job.job_id.clone(),
+            worker_id: config.worker.id.clone(),
+            status: JobStatus::Done,
+            summary: format!("{label} 完成"),
+            report_path,
+            detail: Some(json!({
+                "label": label,
+                "args": args,
+                "exit_code": output.status.code()
+            })),
+        })
+    } else {
+        Ok(WorkerResultRequest {
+            job_id: job.job_id.clone(),
+            worker_id: config.worker.id.clone(),
+            status: JobStatus::Failed,
+            summary: format!(
+                "{label} 失败: exit={:?}\n{}",
+                output.status.code(),
+                tail_text(&combined, 1200)
+            ),
+            report_path,
+            detail: Some(json!({
+                "label": label,
+                "args": args,
+                "exit_code": output.status.code()
+            })),
+        })
+    }
 }
 
 fn run_ping(config: &WorkerConfig, job: &Job) -> WorkerResultRequest {
