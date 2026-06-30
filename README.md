@@ -61,7 +61,7 @@ By default, `bootstrap.sh` installs into the directory where you run the command
 
 ## v0 Master / Worker Preview
 
-Version `v0.0.0` starts the Rust-based master/worker control plane while keeping the Bash audit engine in place. `v1` is reserved for the first formal stable release.
+Version `v0.0.1` continues the Rust-based master/worker control plane while keeping the Bash audit engine in place. `v1` is reserved for the first formal stable release.
 
 - `sui-audit-master`: talks to Telegram, stores jobs, and exposes worker polling APIs.
 - `sui-audit-worker`: polls the master over HTTPS, runs local audit commands, and reports results back.
@@ -91,14 +91,14 @@ The package contains only the master/worker binaries, install scripts, config ex
 For Linux servers, prefer GitHub Actions release builds instead of compiling on macOS. Push a tag to build and publish a Linux amd64 package:
 
 ```bash
-git tag v0.0.0
-git push origin v0.0.0
+git tag v0.0.1
+git push origin v0.0.1
 ```
 
 The release asset will be named like:
 
 ```text
-sui-audit-0.0.0-linux-amd64.tar.gz
+sui-audit-0.0.1-linux-amd64.tar.gz
 ```
 
 Use `uname -m` on the server. `x86_64` servers should use the `linux-amd64` package.
@@ -130,11 +130,10 @@ Useful Telegram commands for the control plane:
 /worker_token
 /workers
 /worker WORKER_ID
-/ping_worker WORKER_ID
 /jobs
 ```
 
-`/workers`, `/menu`, and `/start` open an inline button menu. Select a worker to run ping, yesterday audit, weekly summary, or get the user-report command format.
+`/workers`, `/menu`, and `/start` open an inline button menu. Select a worker to run yesterday audit, weekly summary, or get the user-report command format.
 
 Update an existing master or worker from the same release line without touching local config:
 

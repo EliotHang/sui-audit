@@ -4,7 +4,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 GITHUB_REPO="${SUI_AUDIT_GITHUB_REPO:-EliotHang/sui-audit}"
-RELEASE_VERSION="${SUI_AUDIT_RELEASE_VERSION:-0.0.0}"
+RELEASE_VERSION="${SUI_AUDIT_RELEASE_VERSION:-0.0.1}"
 INSTALL_DIR="${SUI_AUDIT_MASTER_DIR:-/opt/sui-audit-master}"
 TMP_DIR=""
 UPDATE_MODE=0
@@ -47,7 +47,7 @@ usage() {
 
 环境变量:
   SUI_AUDIT_GITHUB_REPO      默认: EliotHang/sui-audit
-  SUI_AUDIT_RELEASE_VERSION  默认: 0.0.0
+  SUI_AUDIT_RELEASE_VERSION  默认: 0.0.1
   SUI_AUDIT_MASTER_DIR       默认: /opt/sui-audit-master
 
 示例:

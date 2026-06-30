@@ -76,7 +76,6 @@ async fn poll_once(client: &Client, config: &WorkerConfig, token: &str) -> Resul
 
 async fn run_job(config: &WorkerConfig, job: Job) -> Result<()> {
     let result = match job.job_type.as_str() {
-        "ping" => Ok(run_ping(config, &job)),
         "daily_audit" => run_audit_command(config, &job, "昨日审计", &["--daily"]).await,
         "weekly_summary" => run_audit_command(config, &job, "周总结", &["--weekly-summary"]).await,
         "user_report" => run_user_report(config, &job).await,
@@ -141,21 +140,6 @@ async fn run_audit_command(
                 "exit_code": output.status.code()
             })),
         })
-    }
-}
-
-fn run_ping(config: &WorkerConfig, job: &Job) -> WorkerResultRequest {
-    WorkerResultRequest {
-        job_id: job.job_id.clone(),
-        worker_id: config.worker.id.clone(),
-        status: JobStatus::Done,
-        summary: format!("pong from {}", config.worker.name),
-        report_path: None,
-        detail: Some(json!({
-            "worker_id": config.worker.id,
-            "worker_name": config.worker.name,
-            "version": VERSION
-        })),
     }
 }
 

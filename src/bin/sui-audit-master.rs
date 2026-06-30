@@ -515,7 +515,6 @@ async fn send_worker_actions(state: &AppState, chat_id: &str, worker_id: &str) -
                 {"text": "用户报告", "callback_data": format!("user:{worker_id}")}
             ],
             [
-                {"text": "Ping", "callback_data": format!("ping:{worker_id}")},
                 {"text": "返回列表", "callback_data": "workers"}
             ]
         ]
@@ -601,9 +600,6 @@ async fn handle_callback_data(
         send_worker_actions(state, &chat_id, worker_id).await?;
         return Ok("请选择操作".to_string());
     }
-    if let Some(worker_id) = data.strip_prefix("ping:") {
-        return enqueue_ping_worker(state, worker_id, chat_id, message_id);
-    }
     if let Some(worker_id) = data.strip_prefix("daily:") {
         return enqueue_worker_job(
             state,
@@ -652,7 +648,6 @@ async fn build_job_from_command(
         )),
         ["/workers"] => list_workers(state),
         ["/worker", worker] => show_worker(state, worker),
-        ["/ping_worker", worker] => enqueue_ping_worker(state, worker, chat_id, message_id),
         ["/jobs"] => {
             let db = state.db.lock().map_err(|_| anyhow::anyhow!("db lock"))?;
             let mut stmt = db.prepare(
@@ -691,7 +686,7 @@ async fn build_job_from_command(
             message_id,
         ),
         _ => Ok(
-            "支持命令: /status /worker_token /workers /worker WORKER /ping_worker WORKER /jobs /report_user WORKER USER [day|week] [YYYY-MM-DD]"
+            "支持命令: /status /worker_token /workers /worker WORKER /jobs /report_user WORKER USER [day|week] [YYYY-MM-DD]"
                 .to_string(),
         ),
     }
@@ -732,34 +727,6 @@ fn show_worker(state: &AppState, worker_id: &str) -> Result<String> {
         } else {
             tags.join(",")
         }
-    ))
-}
-
-fn enqueue_ping_worker(
-    state: &AppState,
-    worker_id: &str,
-    chat_id: String,
-    message_id: i64,
-) -> Result<String> {
-    let db = state.db.lock().map_err(|_| anyhow::anyhow!("db lock"))?;
-    let exists: i64 = db.query_row(
-        "select exists(select 1 from workers where worker_id=?1)",
-        params![worker_id],
-        |row| row.get(0),
-    )?;
-    if exists != 1 {
-        anyhow::bail!("找不到 worker: {worker_id}");
-    }
-    let job_id = create_job(
-        &db,
-        "ping",
-        Some(worker_id),
-        json!({}),
-        Some(&chat_id),
-        Some(message_id),
-    )?;
-    Ok(format!(
-        "已发送 ping 任务 {job_id}，等待 worker {worker_id} 回报"
     ))
 }
 
