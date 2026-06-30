@@ -76,6 +76,7 @@ async fn poll_once(client: &Client, config: &WorkerConfig, token: &str) -> Resul
 
 async fn run_job(config: &WorkerConfig, job: Job) -> Result<()> {
     let result = match job.job_type.as_str() {
+        "ping" => Ok(run_ping(config, &job)),
         "user_report" => run_user_report(config, &job).await,
         other => Ok(WorkerResultRequest {
             job_id: job.job_id.clone(),
@@ -88,6 +89,21 @@ async fn run_job(config: &WorkerConfig, job: Job) -> Result<()> {
     }?;
 
     send_result(config, result).await
+}
+
+fn run_ping(config: &WorkerConfig, job: &Job) -> WorkerResultRequest {
+    WorkerResultRequest {
+        job_id: job.job_id.clone(),
+        worker_id: config.worker.id.clone(),
+        status: JobStatus::Done,
+        summary: format!("pong from {}", config.worker.name),
+        report_path: None,
+        detail: Some(json!({
+            "worker_id": config.worker.id,
+            "worker_name": config.worker.name,
+            "version": VERSION
+        })),
+    }
 }
 
 async fn run_user_report(config: &WorkerConfig, job: &Job) -> Result<WorkerResultRequest> {

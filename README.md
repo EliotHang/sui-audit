@@ -123,6 +123,17 @@ bash <(curl -fsSL https://raw.githubusercontent.com/EliotHang/sui-audit/feature/
 
 The worker installer automatically generates a UUID-style worker id and uses `https://audit.990829.xyz` as the default master URL. Copy the Worker Token from the master install and paste it into the worker installer.
 
+Useful Telegram commands for the control plane:
+
+```text
+/status
+/worker_token
+/workers
+/worker WORKER_ID
+/ping_worker WORKER_ID
+/jobs
+```
+
 Update an existing master or worker from the same release line without touching local config:
 
 ```bash

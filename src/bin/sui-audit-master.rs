@@ -48,6 +48,15 @@ struct TelegramClient {
     poll_timeout_seconds: u64,
 }
 
+#[derive(Debug)]
+struct WorkerRow {
+    worker_id: String,
+    name: String,
+    tags_json: String,
+    version: String,
+    last_seen_at: i64,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -454,26 +463,9 @@ async fn build_job_from_command(
             "Worker Token:\n{}\n\n请在 worker 安装器里粘贴这个 token。",
             state.worker_token
         )),
-        ["/workers"] => {
-            let db = state.db.lock().map_err(|_| anyhow::anyhow!("db lock"))?;
-            let mut stmt =
-                db.prepare("select worker_id, name, last_seen_at from workers order by worker_id")?;
-            let rows = stmt.query_map([], |row| {
-                Ok(format!(
-                    "- {} ({}) last_seen={}",
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?
-                ))
-            })?;
-            let workers: Result<Vec<_>, _> = rows.collect();
-            let workers = workers?;
-            if workers.is_empty() {
-                Ok("暂无 worker".to_string())
-            } else {
-                Ok(format!("Workers:\n{}", workers.join("\n")))
-            }
-        }
+        ["/workers"] => list_workers(state),
+        ["/worker", worker] => show_worker(state, worker),
+        ["/ping_worker", worker] => enqueue_ping_worker(state, worker, chat_id, message_id),
         ["/jobs"] => {
             let db = state.db.lock().map_err(|_| anyhow::anyhow!("db lock"))?;
             let mut stmt = db.prepare(
@@ -512,10 +504,149 @@ async fn build_job_from_command(
             message_id,
         ),
         _ => Ok(
-            "支持命令: /status /worker_token /workers /jobs /report_user WORKER USER [day|week] [YYYY-MM-DD]"
+            "支持命令: /status /worker_token /workers /worker WORKER /ping_worker WORKER /jobs /report_user WORKER USER [day|week] [YYYY-MM-DD]"
                 .to_string(),
         ),
     }
+}
+
+fn list_workers(state: &AppState) -> Result<String> {
+    let db = state.db.lock().map_err(|_| anyhow::anyhow!("db lock"))?;
+    let workers = fetch_workers(&db)?;
+    if workers.is_empty() {
+        return Ok("暂无 worker".to_string());
+    }
+
+    let now = now_ts();
+    let rows = workers
+        .iter()
+        .map(|worker| format_worker_summary(worker, now))
+        .collect::<Vec<_>>();
+    Ok(format!("Workers:\n{}", rows.join("\n")))
+}
+
+fn show_worker(state: &AppState, worker_id: &str) -> Result<String> {
+    let db = state.db.lock().map_err(|_| anyhow::anyhow!("db lock"))?;
+    let Some(worker) = fetch_worker(&db, worker_id)? else {
+        anyhow::bail!("找不到 worker: {worker_id}");
+    };
+    let now = now_ts();
+    let tags = parse_tags(&worker.tags_json);
+    Ok(format!(
+        "Worker 详情\nid: {}\nname: {}\nstatus: {}\nversion: {}\nlast_seen: {} ({} ago)\ntags: {}",
+        worker.worker_id,
+        worker.name,
+        worker_status(worker.last_seen_at, now),
+        worker.version,
+        worker.last_seen_at,
+        human_duration(now.saturating_sub(worker.last_seen_at)),
+        if tags.is_empty() {
+            "-".to_string()
+        } else {
+            tags.join(",")
+        }
+    ))
+}
+
+fn enqueue_ping_worker(
+    state: &AppState,
+    worker_id: &str,
+    chat_id: String,
+    message_id: i64,
+) -> Result<String> {
+    let db = state.db.lock().map_err(|_| anyhow::anyhow!("db lock"))?;
+    let exists: i64 = db.query_row(
+        "select exists(select 1 from workers where worker_id=?1)",
+        params![worker_id],
+        |row| row.get(0),
+    )?;
+    if exists != 1 {
+        anyhow::bail!("找不到 worker: {worker_id}");
+    }
+    let job_id = create_job(
+        &db,
+        "ping",
+        Some(worker_id),
+        json!({}),
+        Some(&chat_id),
+        Some(message_id),
+    )?;
+    Ok(format!(
+        "已发送 ping 任务 {job_id}，等待 worker {worker_id} 回报"
+    ))
+}
+
+fn fetch_workers(db: &Connection) -> Result<Vec<WorkerRow>> {
+    let mut stmt = db.prepare(
+        "select worker_id, name, tags_json, version, last_seen_at from workers order by last_seen_at desc",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(WorkerRow {
+            worker_id: row.get(0)?,
+            name: row.get(1)?,
+            tags_json: row.get(2)?,
+            version: row.get(3)?,
+            last_seen_at: row.get(4)?,
+        })
+    })?;
+    let workers: std::result::Result<Vec<_>, _> = rows.collect();
+    Ok(workers?)
+}
+
+fn fetch_worker(db: &Connection, worker_id: &str) -> Result<Option<WorkerRow>> {
+    db.query_row(
+        "select worker_id, name, tags_json, version, last_seen_at from workers where worker_id=?1",
+        params![worker_id],
+        |row| {
+            Ok(WorkerRow {
+                worker_id: row.get(0)?,
+                name: row.get(1)?,
+                tags_json: row.get(2)?,
+                version: row.get(3)?,
+                last_seen_at: row.get(4)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
+fn format_worker_summary(worker: &WorkerRow, now: i64) -> String {
+    format!(
+        "- {} ({}) {} seen {} ago v{}",
+        worker.worker_id,
+        worker.name,
+        worker_status(worker.last_seen_at, now),
+        human_duration(now.saturating_sub(worker.last_seen_at)),
+        worker.version
+    )
+}
+
+fn worker_status(last_seen_at: i64, now: i64) -> &'static str {
+    let age = now.saturating_sub(last_seen_at);
+    if age <= 90 {
+        "online"
+    } else if age <= 300 {
+        "stale"
+    } else {
+        "offline"
+    }
+}
+
+fn human_duration(seconds: i64) -> String {
+    if seconds < 60 {
+        format!("{seconds}s")
+    } else if seconds < 3600 {
+        format!("{}m", seconds / 60)
+    } else if seconds < 86400 {
+        format!("{}h{}m", seconds / 3600, (seconds % 3600) / 60)
+    } else {
+        format!("{}d{}h", seconds / 86400, (seconds % 86400) / 3600)
+    }
+}
+
+fn parse_tags(tags_json: &str) -> Vec<String> {
+    serde_json::from_str(tags_json).unwrap_or_default()
 }
 
 fn enqueue_user_report(
